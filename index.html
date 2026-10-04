@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="ru" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="google" content="notranslate">
+<title>Лаборатория — анализ речи</title>
+<style>
+:root{
+  --bg:#f6f8f9;--fg:#15232b;--mut:#56666e;--card:#fff;--line:#c9d5da;
+  --acc:#1c5f8a;--btnfg:#fff;--ref:#d85a30;--ok:#287a45;--warn:#a56700;--bad:#b52e2e;
+}
+@media(prefers-color-scheme:dark){
+ :root{--bg:#0f1a20;--fg:#e6eef1;--mut:#9fb0b8;--card:#17262d;--line:#2b3d46;
+ --acc:#7cc0ea;--btnfg:#0f1a20;--ref:#ff9a6b;--ok:#63c786;--warn:#e7b45c;--bad:#ff7c7c}
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px 14px 44px}
+h1{font-size:1.3rem;margin:0 0 10px}
+h2{font-size:1rem;margin:18px 0 6px}
+h3{font-size:.95rem;margin:12px 0 5px}
+button,select,input[type=file]{
+ font:inherit;padding:9px 12px;border-radius:8px;border:1px solid var(--line);
+ background:var(--card);color:var(--fg);margin:4px 6px 4px 0
+}
+button.p{background:var(--acc);color:var(--btnfg);border:0;font-weight:600}
+button.on{outline:3px solid var(--acc)}
+button:disabled{opacity:.55}
+canvas{width:100%;display:block;background:var(--card);border-radius:8px;border:1px solid var(--line)}
+input[type=range]{width:100%}
+.rangeScale{display:flex;justify-content:space-between;margin:-2px 2px 0;font-size:.75rem;color:var(--mut)}
+.rangeScale span{position:relative;text-align:center;min-width:28px}
+.rangeScale span:before{content:"";display:block;width:1px;height:6px;background:var(--line);margin:0 auto 2px}
+select{max-width:100%}
+label{display:block;margin-top:7px}
+.m,small{color:var(--mut)}
+.status{white-space:pre-line}
+.card{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.metric{padding:7px;border:1px solid var(--line);border-radius:7px}
+.metric b{display:block;font-size:1.05rem}
+.note{font-size:.88rem}
+#lv{transition:width .08s}
+.dual{position:relative;height:34px;margin:6px 0}
+.dual input[type=range]{position:absolute;left:0;top:0;width:100%;height:34px;margin:0;padding:0;background:none;border:0;pointer-events:none;-webkit-appearance:none;appearance:none}
+.dual input[type=range]::-webkit-slider-runnable-track{background:transparent;height:34px}
+.dual input[type=range]::-moz-range-track{background:transparent}
+.dual input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;pointer-events:auto;width:22px;height:22px;margin-top:6px;border-radius:50%;background:var(--acc);border:2px solid var(--card);box-shadow:0 0 0 1px var(--acc)}
+.dual input[type=range]::-moz-range-thumb{pointer-events:auto;width:18px;height:18px;border-radius:50%;background:var(--acc);border:2px solid var(--card)}
+.dtrack{position:absolute;left:11px;right:11px;top:15px;height:4px;border-radius:2px;background:var(--line)}
+.dfill{position:absolute;top:15px;height:4px;background:var(--acc)}
+.nums{display:flex;justify-content:space-between;gap:8px}
+.nums input{width:104px;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+@media(max-width:520px){.grid{grid-template-columns:1fr}}
+#bk{display:none}
+/* Formant-graph focus mode: only the waveform with selection, the formant graph, its controls and the back button stay. */
+body.fmtf main>*:not(#ws){display:none}
+body.fmtf #bk{display:inline-block}
+body.fmtf #ws #tabs,body.fmtf #ws #fr,body.fmtf #ws #lc,body.fmtf #ws #formantBox,body.fmtf #ws #etw{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>Лаборатория <button id="sb">Настройки</button></h1>
+
+<div id="sp" class="card">
+<h2>Настройки звука</h2>
+<button id="gm" class="p">Включить микрофон</button>
+<label>Микрофон<select id="sm"></select></label>
+<label id="lo">Воспроизведение<select id="so"></select></label>
+<p id="no" class="m" hidden>Выбор устройства воспроизведения недоступен: используется системное.</p>
+<label><input type="checkbox" id="ec"> Эхоподавление</label>
+<label><input type="checkbox" id="ns"> Шумоподавление</label>
+<label><input type="checkbox" id="agc"> Автоусиление</label>
+<label><input type="checkbox" id="pcm"> Запись без сжатия</label>
+<label>Цифровое усиление <span id="gv">100%</span>
+<input id="gn" type="range" min="25" max="400" value="100"></label>
+<div style="height:10px;background:var(--line);border-radius:5px;margin:8px 0">
+ <div id="lv" style="height:100%;width:0;background:var(--acc);border-radius:5px"></div>
+</div>
+<div class="grid">
+ <button id="ck">Проверить микрофон</button>
+ <button id="df">По умолчанию</button>
+ <button id="tt">Проверить звук</button>
+ <button id="ok">Готово</button>
+</div>
+<p id="ss" class="m status" role="status"></p>
+</div>
+
+<div class="card">
+<div><button id="smic" class="on">Микрофон</button><button id="sfile">Файл</button></div>
+<div id="pm"><button id="rec" class="p">Запись</button><button id="sw" type="button">Записать .wav</button><span class="m">до 10 с</span></div>
+<div id="pf" hidden><input id="fi" type="file"></div>
+<p id="st" class="m status">Запишите слово или выберите файл.</p>
+</div>
+
+<div id="ws" hidden class="card">
+<button id="bk" type="button" class="p">← Вернуться в меню</button>
+<canvas id="cw" width="720" height="200"></canvas>
+<div class="dual"><div class="dtrack"></div><div class="dfill" id="dfill"></div>
+<input id="ra" type="range" min="0" max="100" step="any" value="0" aria-label="Начало выделения">
+<input id="rb" type="range" min="0" max="100" step="any" value="100" aria-label="Конец выделения"></div>
+<div class="nums"><label>Начало, ms<br><input id="raNum" type="number" inputmode="decimal" step="0.1" min="0" value="0"></label>
+<label style="text-align:right">Конец, ms<br><input id="rbNum" type="number" inputmode="decimal" step="0.1" min="0" value="0"></label></div>
+<button id="pl">Прослушать фрагмент</button>
+
+<div id="am"><span class="m">Анализ:</span> <button id="amA" class="on">Вся запись</button><button id="amF">Фрагмент</button></div>
+<div id="fc" style="margin:6px 0"><span class="m">Потолок формант, Гц:</span> <button id="fc5" class="on" type="button">5500</button><button id="fc6" type="button">6000</button></div>
+<div id="tabs"></div>
+<div id="f4row" hidden style="margin:6px 0"><button id="f4t" class="on" type="button" aria-pressed="true">F4: показать</button><button id="f0t" class="on" type="button" aria-pressed="true">F0: скрыть</button><button id="pt128" type="button" aria-pressed="false">Полюса 128: показать</button><button id="pt32" type="button" aria-pressed="false">Полюса 32: показать</button></div>
+<div id="fr"><span class="m">Предел, кГц:</span> <span id="wr" style="white-space:nowrap;margin-left:10px"></span></div>
+<canvas id="cg" width="720" height="390"></canvas>
+<label id="lc">Положение анализа <span id="rcv" class="m">0 ms</span>
+<input id="rc" type="range" min="0" max="100" value="0" step="0.1" aria-label="Положение спектра в миллисекундах">
+<input id="rcNum" type="number" inputmode="decimal" value="0" min="0" step="0.1" aria-label="Точное положение в миллисекундах" style="width:92px;margin-left:8px;"> <span class="m">ms от начала WAV</span>
+<div class="rangeScale" id="rangeScale" aria-hidden="true"></div></label>
+<p id="info" class="m status"></p>
+<div id="formantBox" class="card" style="margin-top:8px">
+ <h2 style="margin-top:0">Форманты в одной и той же точке времени</h2>
+ <div class="grid" style="grid-template-columns:1fr 1fr">
+  <div class="card" style="margin:0"><h3 style="margin-top:0">Окно 128 ms</h3><div class="grid">
+   <div class="metric"><span class="m">F0</span><b id="f0v128">—</b></div><div class="metric"><span class="m">F1</span><b id="f1v128">—</b></div><div class="metric"><span class="m">F2</span><b id="f2v128">—</b></div><div class="metric"><span class="m">F3</span><b id="f3v128">—</b></div><div class="metric"><span class="m">F4</span><b id="f4v128">—</b></div>
+  </div></div>
+  <div class="card" style="margin:0"><h3 style="margin-top:0">Окно 32 ms</h3><div class="grid">
+   <div class="metric"><span class="m">F0</span><b id="f0v32">—</b></div><div class="metric"><span class="m">F1</span><b id="f1v32">—</b></div><div class="metric"><span class="m">F2</span><b id="f2v32">—</b></div><div class="metric"><span class="m">F3</span><b id="f3v32">—</b></div><div class="metric"><span class="m">F4</span><b id="f4v32">—</b></div>
+  </div></div>
+ </div>
+ <small class="m">Обе оценки берутся из одного абсолютного времени. 128 ms и 32 ms — независимые окна анализа. У границ WAV используется доступная часть окна, без искусственного дополнения нулями.</small>
+</div>
+
+<div id="etw">
+<h2>Эталон</h2>
+<select id="sel"></select>
+<button id="sv">Сохранить как эталон</button>
+<button id="cmp">Сравнить</button>
+<button id="del">Удалить</button><br>
+<button id="lr">Слушать эталон</button>
+<button id="xa">Эталон в анализ</button>
+<button id="xf">Эталон в WAV</button>
+<button id="xi">Эталон из WAV</button>
+<input id="xin" type="file" hidden>
+<p id="rs" class="m status"></p>
+</div>
+</div>
+
+<p class="note m">
+Анализ не является калиброванным измерением акустики речи. Форманты вычисляются по спектральной огибающей и поэтому являются оценкой.
+Абсолютная громкость в дБ SPL не определяется. Тест MAX оценивает пригодность цепочки записи для данного тестового сигнала, а не паспортную АЧХ микрофона.
+</p>
+</main>
+
+<script>
+'use strict';
+
+const $=id=>document.getElementById(id);
+
+const rcNum=$('rcNum'), rcRange=$('rc');
+function fileDurationMs(){return S?S.d.length/S.sr*1000:0}
+function setAnalysisTimeMs(v){
+ const max=fileDurationMs(),lo=0,hi=max;
+ v=Number.isFinite(v)?v:lo;v=Math.max(lo,Math.min(hi,v));
+ rcRange.min=lo;rcRange.max=Math.max(lo,hi);rcRange.value=v;rcNum.min=lo;rcNum.value=v.toFixed(1);$('rcv').textContent=v.toFixed(1)+' ms';updateRangeScale();
+}
+function updateRangeScale(){
+ const el=$('rangeScale');if(!el)return;const lo=+rcRange.min||0,hi=+rcRange.max||0;
+ if(!S||!hi){el.innerHTML='<span>0 ms</span>';return}
+ el.innerHTML=[0,.25,.5,.75,1].map(p=>'<span>'+Math.round(lo+p*(hi-lo))+' ms</span>').join('');
+}
+rcRange.addEventListener('input',()=>{setAnalysisTimeMs(Number(rcRange.value));redraw()});
+rcNum.addEventListener('change',()=>{setAnalysisTimeMs(parseFloat(String(rcNum.value).replace(',','.')));drawWave();draw()});
+const AC=window.AudioContext||window.webkitAudioContext;
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+let ctx=null,S=null,R=null,tab=0,cmp=false,rec=null,recTimer=null,raf=0,an=null,gnode=null,drawTimer=0;
+let FMAX=8000,anaMode='all',fCeil=5500;
+// Formant search presets: ceiling (Hz) -> LPC working rate and order. Both checked on Hillenbrand 1995 database.
+const FPARAMS={5500:{T:11025,order:12},6000:{T:16000,order:16}};
+let viewMode='wave';
+
+const SND='i ɪ ɛ æ ɑ ɔ ʊ u ʌ ə ɝ ɚ ɨ eɪ aɪ ɔɪ oʊ aʊ ɪr ɛr ɑr ɔr oʊr ʊr p b t d k g tʃ dʒ f v θ ð s z ʃ ʒ h m n ŋ l r j w ʍ x'.split(' ')
+ .concat(['слово A','слово B','слово C']);
+$('sel').innerHTML=SND.map(s=>'<option value="'+esc(s)+'">'+esc(s)+'</option>').join('');
+
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+const MODES=[
+ ['Форма','wave'],
+ ['Спектр','spec'],
+ ['Спектрограмма','sg'],
+ ['F0 (основной тон)','f0'],
+ ['График формант','fmt'],
+ ['Громкость','loud']
+];
+let showF4=true;
+const setF4Label=()=>{const b=$('f4t');b.classList.toggle('on',showF4);b.setAttribute('aria-pressed',String(showF4));b.textContent=showF4?'F4: скрыть':'F4: показать'};
+$('f4t').onclick=()=>{showF4=!showF4;setF4Label();if(S)draw()};setF4Label();
+// Manual formant picking: show every LPC pole of every frame as a dot (bigger/darker = narrower = stronger resonance).
+let showP={128:false,32:false},showF0=true,poleSel=null,poleHit=[];
+const setPLabel=()=>{
+ [128,32].forEach(w=>{const b=$('pt'+w);b.classList.toggle('on',showP[w]);b.setAttribute('aria-pressed',String(showP[w]));b.textContent='Полюса '+w+(showP[w]?': скрыть':': показать')});
+ const b=$('f0t');b.classList.toggle('on',showF0);b.setAttribute('aria-pressed',String(showF0));b.textContent=showF0?'F0: скрыть':'F0: показать';
+};
+[128,32].forEach(w=>$('pt'+w).onclick=()=>{showP[w]=!showP[w];poleSel=null;setPLabel();if(S)draw()});
+$('f0t').onclick=()=>{showF0=!showF0;setPLabel();if(S)draw()};setPLabel();
+$('cg').addEventListener('pointerdown',e=>{
+ if(viewMode!=='fmt'||!(showP[128]||showP[32])||!poleHit.length)return;
+ const c=$('cg'),r=c.getBoundingClientRect(),px=(e.clientX-r.left)*c.width/r.width,py=(e.clientY-r.top)*c.height/r.height;
+ let best=null,bd=28*28;for(const h of poleHit){const d=(h.X-px)**2+(h.Y-py)**2;if(d<bd){bd=d;best=h}}
+ poleSel=best;draw();
+});
+// Window length per tab: first value is the default (the longest window).
+const WINS={spec:[128,32,8],sg:[32,16,8,4]},winSel={spec:128,sg:32};
+let curTab='wave';
+let prevTab='wave';
+function setView(base){
+ if(base==='fmt'&&curTab!=='fmt')prevTab=curTab;
+ const wasFmt=curTab==='fmt';
+ curTab=base;
+ document.body.classList.toggle('fmtf',base==='fmt');
+ if((base==='fmt')!==wasFmt)window.scrollTo(0,0);
+ viewMode=(base==='spec'||base==='sg')?base+winSel[base]:base;
+ [...$('tabs').children].forEach(c=>c.classList.toggle('on',c.dataset.m===base));
+ const isSpec=viewMode.startsWith('spec')||viewMode.startsWith('sg');
+ $('lc').hidden=!isSpec;
+ $('formantBox').hidden=!(viewMode==='spec128'||viewMode==='spec32');
+ $('f4row').hidden=base!=='fmt';
+ // window buttons
+ const wr=$('wr');wr.innerHTML='';wr.hidden=!isSpec;
+ if(isSpec){
+  const l=document.createElement('span');l.className='m';l.textContent='Окно:';wr.appendChild(l);
+  WINS[base].forEach(w=>{
+   const b=document.createElement('button');b.type='button';b.className='wb'+(w===winSel[base]?' on':'');b.textContent=w;b.title='Окно '+w+' ms';
+   b.onclick=()=>{winSel[base]=w;setView(base);updateFr();if(S){drawWave();draw()}};
+   wr.appendChild(b);
+  });
+ }
+ updateFr();
+ if(S){drawWave();draw();}
+}
+$('bk').onclick=()=>setView(prevTab&&prevTab!=='fmt'?prevTab:'wave');
+MODES.forEach(([t,m],i)=>{
+ const b=document.createElement('button'); b.textContent=t; b.dataset.m=m; if(i===0)b.className='on';
+ b.onclick=()=>setView(m);
+ $('tabs').appendChild(b);
+});
+$('lc').hidden=true;
+
+
+[8,12,16].forEach(k=>{
+ const b=document.createElement('button');b.textContent=k+(k===8?'':'');
+ if(k===8)b.className='on';
+ b.onclick=()=>{
+  FMAX=k*1000;
+  [...$('fr').querySelectorAll('button:not(.wb)')].forEach(c=>c.classList.toggle('on',c===b));
+  if(S)draw();
+ };$('fr').insertBefore(b,$('wr'));
+});
+
+$('smic').onclick=()=>{$('pm').hidden=false;$('pf').hidden=true;$('smic').className='on';$('sfile').className=''};
+$('sfile').onclick=()=>{$('pm').hidden=true;$('pf').hidden=false;$('sfile').className='on';$('smic').className=''};
+
+const DEF={mic:'',out:'',ec:false,ns:false,agc:false,gain:1,pcm:true};
+let cfg={...DEF};
+try{Object.assign(cfg,JSON.parse(localStorage.getItem('pl_cfg')||'{}'))}catch(e){}
+function save(){try{localStorage.setItem('pl_cfg',JSON.stringify(cfg))}catch(e){}}
+
+function audioConstraints(){
+ return {audio:{
+   deviceId:cfg.mic?{exact:cfg.mic}:undefined,
+   echoCancellation:cfg.ec,noiseSuppression:cfg.ns,autoGainControl:cfg.agc,
+   channelCount:{ideal:1},sampleRate:{ideal:48000}
+ }};
+}
+function ui(){
+ ['ec','ns','agc','pcm'].forEach(k=>$(k).checked=!!cfg[k]);
+ $('gn').value=cfg.gain*100;$('gv').textContent=Math.round(cfg.gain*100)+'%';
+ $('sm').value=cfg.mic;$('so').value=cfg.out;
+}
+async function devs(){
+ try{
+  const d=await navigator.mediaDevices.enumerateDevices();
+  const fill=(el,key,kind)=>{
+   const L=d.filter(x=>x.kind===kind);
+   el.innerHTML='<option value="">Системное по умолчанию</option>'+
+    L.map(x=>'<option value="'+esc(x.deviceId)+'">'+esc(x.label||kind)+'</option>').join('');
+   if(!L.some(x=>x.deviceId===cfg[key]))cfg[key]='';
+  };
+  fill($('sm'),'mic','audioinput');fill($('so'),'out','audiooutput');ui();return d;
+ }catch(e){return[]}
+}
+function stopM(){
+ cancelAnimationFrame(raf);
+ if(ms)ms.getTracks().forEach(t=>t.stop());
+ ms=null;an=null;gnode=null;
+}
+let ms=null;
+
+async function mic(){
+ stopM();
+ if(!navigator.mediaDevices?.getUserMedia)throw new Error('getUserMedia недоступен');
+ ctx=ctx||new AC();
+ try{ms=await navigator.mediaDevices.getUserMedia(audioConstraints())}
+ catch(e){
+  if(!cfg.mic)throw e;
+  cfg.mic='';save();
+  ms=await navigator.mediaDevices.getUserMedia(audioConstraints());
+ }
+ await ctx.resume();
+ return ms;
+}
+
+function startMeter(){
+ const src=ctx.createMediaStreamSource(ms);
+ gnode=ctx.createGain();gnode.gain.value=cfg.gain;
+ an=ctx.createAnalyser();an.fftSize=1024;an.smoothingTimeConstant=.15;
+ src.connect(gnode);gnode.connect(an);
+ const b=new Float32Array(an.fftSize);
+ const f=()=>{
+  if(!an)return;
+  an.getFloatTimeDomainData(b);let m=0;
+  for(const v of b)m=Math.max(m,Math.abs(v));
+  const db=20*Math.log10(m+1e-9);
+  $('lv').style.width=Math.min(100,Math.max(0,(db+60)/.6))+'%';
+  $('lv').style.background=m>.98?'var(--bad)':'var(--acc)';
+  raf=requestAnimationFrame(f);
+ };
+ f();
+}
+
+async function meter(){
+ save();
+ try{
+  await mic();await devs();startMeter();
+  const t=ms.getAudioTracks()[0].getSettings();
+  const cap=t.sampleRate||ctx.sampleRate;
+  const f=v=>v?'вкл':'выкл';
+  $('ss').textContent=
+   'Поток: '+(cap/1000).toFixed(1)+' кГц, '+(t.channelCount||1)+' кан.\n'+
+   'Эхоподавление: '+f(t.echoCancellation)+
+   ', шумоподавление: '+f(t.noiseSuppression)+
+   ', АРУ: '+f(t.autoGainControl)+
+   '.\nЦифровое усиление: '+Math.round(cfg.gain*100)+'%.';
+ }catch(e){$('ss').textContent='Микрофон недоступен: '+e.name+(e.message?' — '+e.message:'')}
+}
+
+function play(x,sr){
+ if(!x||!x.length)return;
+ ctx=ctx||new AC();ctx.resume();
+ if(ctx.setSinkId)try{ctx.setSinkId(cfg.out||'').catch(()=>{})}catch(e){}
+ const b=ctx.createBuffer(1,x.length,sr);b.copyToChannel(x,0);
+ const o=ctx.createBufferSource();o.buffer=b;o.connect(ctx.destination);o.start();
+}
+
+$('gm').onclick=meter;
+$('sb').onclick=()=>{$('sp').hidden=!$('sp').hidden;if($('sp').hidden)stopM()};
+$('ok').onclick=()=>{stopM();$('sp').hidden=true};
+
+['ec','ns','agc','pcm'].forEach(k=>$(k).onchange=async()=>{
+ cfg[k]=$(k).checked;save();
+ if(k!=='pcm'&&ms)await meter();
+});
+$('sm').onchange=async()=>{cfg.mic=$('sm').value;save();await meter()};
+$('so').onchange=()=>{cfg.out=$('so').value;save()};
+$('gn').oninput=()=>{cfg.gain=$('gn').value/100;$('gv').textContent=Math.round(cfg.gain*100)+'%';if(gnode)gnode.gain.value=cfg.gain;save()};
+
+$('tt').onclick=()=>play(
+ Float32Array.from({length:48000},(_,i)=>.18*Math.sin(2*Math.PI*440*i/48000)*
+ Math.min(1,i/960,(48000-i)/960)),48000);
+
+$('df').onclick=async()=>{Object.assign(cfg,DEF);ui();await meter();$('ss').textContent='Настройки сброшены.\n'+$('ss').textContent};
+
+function show(d,sr,fileName=''){
+ S={d,sr};$('ws').hidden=false;setSel(0,fileDurationMs());updateFr();
+ $('st').textContent=(fileName?'Файл: '+fileName+' | ':'')+'Длина '+(d.length/sr).toFixed(2)+' с. Выделите нужный фрагмент.';
+ setAnalysisTimeMs(0);
+ drawWave();draw();chk();
+}
+async function decodeNative(buf){
+ const v=new DataView(buf);let sr=0;
+ if(buf.byteLength>28&&v.getUint32(0)===0x52494646&&v.getUint32(8)===0x57415645)sr=v.getUint32(24,true);
+ if(sr>=8000&&sr<=96000){let c;try{c=new AC({sampleRate:sr});return await c.decodeAudioData(buf.slice(0))}catch(e){}finally{if(c&&c.close)c.close()}}
+ ctx=ctx||new AC();return ctx.decodeAudioData(buf);
+}
+async function load(buf,fileName=''){
+ ctx=ctx||new AC();await ctx.resume();
+ const ab=await decodeNative(buf);
+ const n=ab.length, d=new Float32Array(n);
+ if(ab.numberOfChannels===1)d.set(ab.getChannelData(0));
+ else for(let i=0;i<n;i++){let v=0;for(let c=0;c<ab.numberOfChannels;c++)v+=ab.getChannelData(c)[i];d[i]=v/ab.numberOfChannels}
+ show(d,ab.sampleRate,fileName);
+}
+
+const MINGAP=1;
+function selGet(){return [+$('ra').value,+$('rb').value]}
+function curLim(){return anaMode==='frag'?selGet():null}
+function seg(){const [a,b]=selGet();return S.d.subarray(Math.floor(a*S.sr/1000),Math.floor(b*S.sr/1000))}
+function anaSeg(){return anaMode==='frag'?seg():S.d}
+function anaT0(){return anaMode==='frag'?selGet()[0]/1000:0}
+function isSpecView(){return viewMode.startsWith('spec')||viewMode.startsWith('sg')}
+function updateDual(){
+ const max=fileDurationMs()||1,fa=+$('ra').value/max,fb=+$('rb').value/max,f=$('dfill');
+ f.style.left='calc(11px + (100% - 22px)*'+fa+')';f.style.width='calc((100% - 22px)*'+(fb-fa)+')';
+ $('ra').style.zIndex=fa>.5?3:1;$('rb').style.zIndex=2;
+}
+function setSel(a,b,who){
+ const max=fileDurationMs(),g=Math.min(MINGAP,max/2);
+ a=Number.isFinite(a)?a:0;b=Number.isFinite(b)?b:max;
+ if(who==='b'){b=Math.max(g,Math.min(max,b));a=Math.min(Math.max(0,a),b-g)}
+ else{a=Math.max(0,Math.min(max-g,a));b=Math.min(max,Math.max(b,a+g))}
+ const ra=$('ra'),rb=$('rb');ra.max=max;rb.max=max;ra.value=a;rb.value=b;
+ $('raNum').value=a.toFixed(1);$('rbNum').value=b.toFixed(1);
+ updateDual();if(S)setAnalysisTimeMs(+rcRange.value);
+}
+function updateFr(){
+ const nyq=S?S.sr/2:24000;let best=8;const bs=[...$('fr').querySelectorAll('button:not(.wb)')];
+ bs.forEach(b=>{const k=+b.textContent,ok=k===8||k*1000<=nyq+1;b.disabled=!ok;b.title=ok?'':'у этой записи до '+(nyq/1000).toFixed(1).replace('.',',')+' кГц';if(ok)best=k});
+ if(FMAX/1000>best){FMAX=best*1000;bs.forEach(b=>b.classList.toggle('on',+b.textContent===best))}
+ $('fr').hidden=!isSpecView();
+}
+function setAna(m){
+ anaMode=m;$('amA').classList.toggle('on',m==='all');$('amF').classList.toggle('on',m==='frag');
+ if(!S)return;drawWave();draw();
+}
+$('amA').onclick=()=>setAna('all');$('amF').onclick=()=>setAna('frag');
+function setCeil(c){fCeil=c;$('fc5').classList.toggle('on',c===5500);$('fc6').classList.toggle('on',c===6000);if(S){drawWave();draw()}}
+$('fc5').onclick=()=>setCeil(5500);$('fc6').onclick=()=>setCeil(6000);
+$('pl').onclick=()=>play(seg(),S.sr);
+
+let dbp=null;
+function db(){
+ return dbp||(dbp=new Promise((ok,no)=>{
+  const q=indexedDB.open('pl_lab',2);
+  q.onupgradeneeded=()=>{if(!q.result.objectStoreNames.contains('ref'))q.result.createObjectStore('ref')};
+  q.onsuccess=()=>{q.result.onversionchange=()=>{q.result.close();dbp=null};ok(q.result)};q.onerror=()=>no(q.error);
+ }).catch(e=>{dbp=null;throw e}));
+}
+async function idb(m,k,v){
+ const d=await db();
+ return new Promise((ok,no)=>{
+  const s=d.transaction('ref',m==='get'?'readonly':'readwrite').objectStore('ref');
+  const r=m==='get'?s.get(k):m==='put'?s.put(v,k):s.delete(k);
+  r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);
+ });
+}
+const rs=t=>$('rs').textContent=t;
+const key=()=>'ref_'+$('sel').value;
+async function chk(){
+ try{const r=await idb('get',key());rs(r?'Эталон есть ('+(r.d.length/r.sr).toFixed(2)+' с).':'Эталона для этого звука нет.');return r}
+ catch(e){rs('Хранилище недоступно: '+e.name)}
+}
+
+/* ---------------- FFT / SPECTRUM ---------------- */
+
+function fft(re,im){
+ const n=re.length;
+ for(let i=1,j=0;i<n;i++){
+  let b=n>>1;for(;j&b;b>>=1)j^=b;j^=b;
+  if(i<j){let z=re[i];re[i]=re[j];re[j]=z;z=im[i];im[i]=im[j];im[j]=z}
+ }
+ for(let l=2;l<=n;l<<=1){
+  const a=-2*Math.PI/l;
+  for(let i=0;i<n;i+=l)for(let k=0;k<l/2;k++){
+   const c=Math.cos(a*k),s=Math.sin(a*k),u=i+k,v=u+l/2;
+   const tr=re[v]*c-im[v]*s,ti=re[v]*s+im[v]*c;
+   re[v]=re[u]-tr;im[v]=im[u]-ti;re[u]+=tr;im[u]+=ti;
+  }
+ }
+}
+/* --------- LPC formant estimate: envelope, not raw peak picking --------- */
+
+function nextPow2(n){let p=1;while(p<n)p<<=1;return p}
+function spectralEnvelope(frame,sr,maxHz=5500){
+  if(frame.length<64)return null;
+  const N=Math.max(512,nextPow2(frame.length));
+  const re=new Float64Array(N),im=new Float64Array(N);
+  let mean=0;for(const v of frame)mean+=v;mean/=frame.length;
+  for(let i=0;i<frame.length;i++)re[i]=(frame[i]-mean)*(.54-.46*Math.cos(2*Math.PI*i/Math.max(1,frame.length-1)));
+  fft(re,im);
+  const bins=Math.min(N/2,Math.floor(maxHz/(sr/N)));
+  const magv=new Float64Array(bins);
+  for(let i=0;i<bins;i++)magv[i]=20*Math.log10(Math.hypot(re[i],im[i])/Math.max(1,frame.length)*2+1e-12);
+  const smooth=new Float64Array(bins), sw=Math.max(1,Math.round(35/(sr/N)));
+  for(let i=0;i<bins;i++){let z=0,c=0;for(let j=Math.max(0,i-sw);j<=Math.min(bins-1,i+sw);j++){z+=magv[j];c++}smooth[i]=z/c}
+  return {v:magv,smooth,hz:sr/N,K:bins,mx:Math.max(...magv)};
+}
+function lpcCoeffs(x,p=12){
+  const P=Math.min(p,Math.max(2,Math.floor(x.length/8)));
+  const r=new Float64Array(P+1);
+  for(let k=0;k<=P;k++){let z=0;for(let i=k;i<x.length;i++)z+=x[i]*x[i-k];r[k]=z}
+  if(r[0]<1e-10)return null;
+  const a=new Float64Array(P+1);a[0]=1;let e=r[0];
+  for(let i=1;i<=P;i++){
+    let acc=r[i];for(let j=1;j<i;j++)acc+=a[j]*r[i-j];
+    let k=-acc/Math.max(e,1e-12);k=Math.max(-.98,Math.min(.98,k));
+    const old=a.slice();a[i]=k;
+    for(let j=1;j<i;j++)a[j]=old[j]+k*old[i-j];
+    e*=1-k*k;if(e<1e-12)break;
+  }
+  return a;
+}
+function lpcEnvelope(frame,sr,maxHz=5500,order=12){
+  const n=frame.length,z=new Float64Array(n);let mean=0;for(let i=0;i<n;i++)mean+=frame[i];mean/=n;
+  for(let i=0;i<n;i++){const c=frame[i]-mean,p=i?frame[i-1]-mean:c;z[i]=(c-.97*p)*(.54-.46*Math.cos(2*Math.PI*i/Math.max(1,n-1)))}
+  const a=lpcCoeffs(z,order);if(!a)return null;
+  const N=2048,hz=sr/N,K=Math.min(N/2,Math.floor(maxHz/hz));
+  const v=new Float64Array(K);
+  for(let i=0;i<K;i++){
+    const f=i*hz,w=-2*Math.PI*f/sr;let re=1,im=0;
+    for(let k=1;k<a.length;k++){re+=a[k]*Math.cos(w*k);im+=a[k]*Math.sin(w*k)}
+    v[i]=-20*Math.log10(Math.max(Math.hypot(re,im),1e-9));
+  }
+  return {v,hz,K,mx:Math.max(...v)};
+}
+function localPeaks(v,hz,lo,hi,minProm=0){
+  const a=Math.max(1,Math.ceil(lo/hz)),b=Math.min(v.length-2,Math.floor(hi/hz)),out=[];
+  const span=Math.max(2,Math.round(180/hz));
+  for(let i=a;i<=b;i++){
+    if(!(v[i]>v[i-1]&&v[i]>=v[i+1]))continue;
+    let left=Infinity,right=Infinity;
+    for(let j=Math.max(a,i-span);j<i;j++)left=Math.min(left,v[j]);
+    for(let j=i+1;j<=Math.min(b,i+span);j++)right=Math.min(right,v[j]);
+    const prom=v[i]-Math.max(left,right); if(prom>=minProm)out.push({f:i*hz,h:v[i],prom});
+  }
+  out.sort((a,b)=>b.h-a.h);return out;
+}
+function toLpcRate(x,sr,T=11025){
+  if(sr<=T*1.09)return {x,sr};
+  const r=sr/T,half=Math.ceil(r*4),fc=.45/r,m=Math.floor(x.length/r),o=new Float32Array(m);
+  for(let j=0;j<m;j++){const c=j*r;let q=0,w=0;for(let i=Math.max(0,Math.ceil(c-half));i<=Math.min(x.length-1,Math.floor(c+half));i++){const d=i-c,a=2*Math.PI*fc*d,h=(Math.abs(d)<1e-9?1:Math.sin(a)/a)*(.5+.5*Math.cos(Math.PI*d/half));q+=x[i]*h;w+=h}o[j]=w?q/w:0}
+  return {x:o,sr:T};
+}
+// Local maxima of the envelope slope while it is still falling: a "shoulder" (a resonance without its own peak).
+function envShoulders(env,fl,fh,th){
+  const {v,hz}=env,s=Math.max(1,Math.round(40/hz)),out=[];
+  const sl=i=>(v[i+s]-v[i-s])/(2*s*hz)*100; // dB per 100 Hz
+  const i0=Math.max(s+1,Math.floor(fl/hz)),i1=Math.min(v.length-s-2,Math.floor(fh/hz)),w=Math.round(300/hz);
+  for(let i=i0;i<=i1;i++){
+    const d=sl(i);
+    if(d<0&&d>sl(i-1)&&d>=sl(i+1)){
+      let mnL=d,mnR=d;
+      for(let j=Math.max(s+1,i-w);j<i;j++)mnL=Math.min(mnL,sl(j));
+      for(let j=i+1;j<=Math.min(v.length-s-2,i+w);j++)mnR=Math.min(mnR,sl(j));
+      const p=Math.min(d-mnL,d-mnR);
+      if(p>=th)out.push({f:i*hz,prom:p});
+    }
+  }
+  return out;
+}
+// Formant candidates from LPC poles: frequency from the pole angle, bandwidth from its radius; wide poles are dropped.
+function lpcPoles(frame,sr,minHz,maxHz,order,maxBw){
+  const n=frame.length,z=new Float64Array(n);let mean=0;for(let i=0;i<n;i++)mean+=frame[i];mean/=n;
+  for(let i=0;i<n;i++){const c=frame[i]-mean,p=i?frame[i-1]-mean:c;z[i]=(c-.97*p)*(.54-.46*Math.cos(2*Math.PI*i/Math.max(1,n-1)))}
+  const a=lpcCoeffs(z,order);if(!a)return [];
+  const d=a.length-1;let re=new Float64Array(d),im=new Float64Array(d);
+  for(let i=0;i<d;i++){const ph=2*Math.PI*i/d+.4;re[i]=.9*Math.cos(ph);im[i]=.9*Math.sin(ph)} // Durand-Kerner start
+  for(let it=0;it<200;it++){
+    let mv=0;
+    for(let i=0;i<d;i++){
+      let pr=1,pi=0;for(let k=1;k<=d;k++){const t=pr*re[i]-pi*im[i];pi=pr*im[i]+pi*re[i];pr=t+a[k]}
+      let qr=1,qi=0;for(let j=0;j<d;j++)if(j!==i){const dr=re[i]-re[j],di=im[i]-im[j],t=qr*dr-qi*di;qi=qr*di+qi*dr;qr=t}
+      const den=qr*qr+qi*qi||1e-30,dr=(pr*qr+pi*qi)/den,di=(pi*qr-pr*qi)/den;
+      re[i]-=dr;im[i]-=di;mv=Math.max(mv,Math.abs(dr)+Math.abs(di));
+    }
+    if(mv<1e-10)break;
+  }
+  const out=[];
+  for(let i=0;i<d;i++){
+    if(im[i]<=1e-4)continue;
+    const f=Math.atan2(im[i],re[i])*sr/(2*Math.PI),bw=-Math.log(Math.hypot(re[i],im[i]))*sr/Math.PI;
+    if(f>=minHz&&f<=maxHz&&bw<=maxBw)out.push({f:Math.round(f),bw:Math.round(bw)});
+  }
+  return out.sort((p,q)=>p.f-q.f);
+}
+function lpcPoleFormants(frame,sr,maxHz,order,maxBw=600){return lpcPoles(frame,sr,180,maxHz,order,maxBw).map(p=>p.f)}
+// F1-F3 from LPC poles taken in order of frequency (F1 = lowest peak, F2 = next, F3 = next).
+// F3 may not exceed an upper bound that depends on F0 (low voice 3300 Hz, otherwise 3900 Hz); a larger value is
+// most likely F4, so F3 is then looked for as a spectral shoulder, or left empty. Checked on Hillenbrand 1995 database.
+function formants(frame,sr,f0=null){
+  if(frame.length<64)return [null,null,null,null];
+  const P=FPARAMS[fCeil];
+  ({x:frame,sr}=toLpcRate(frame,sr,P.T));
+  if(frame.length<64)return [null,null,null,null];
+  const env=lpcEnvelope(frame,sr,fCeil,P.order);
+  if(!env)return [null,null,null,null];
+  // Formants = poles of the LPC filter (roots), not peaks of its envelope: a formant that merges with its neighbour
+  // (e.g. F2 next to F1 in [a]) has no peak of its own, only a shoulder, but it is still a pole.
+  const o=lpcPoleFormants(frame,sr,fCeil,P.order);
+  let F3=o[2]??null,F4=o[3]??null;const U=(f0!=null&&f0<165)?3300:3900;
+  if(F3!=null&&F3>U){
+    F4=F3;F3=null;
+    if(o[1]!=null){const sh=envShoulders(env,o[1]+350,U,.15).sort((a,b)=>b.prom-a.prom);if(sh.length)F3=Math.round(sh[0].f)}
+  }
+  return [o[0]??null,o[1]??null,F3,F4];
+}
+function specCurve(frame,sr,fm){
+  if(frame.length<16)return {v:new Float32Array(),e:new Float32Array(),hz:1,mx:-100,fmax:0};
+  const N=Math.max(512,nextPow2(frame.length));
+  const m=magPadded(frame,sr,N),hz=sr/N,K=Math.min(m.length,Math.floor(fm/hz));
+  const v=m.subarray(0,K),e=new Float32Array(K),w=Math.max(1,Math.round(60/hz));
+  for(let i=0;i<K;i++){let z=0,c=0;for(let j=Math.max(0,i-w);j<=Math.min(K-1,i+w);j++){z+=v[j];c++}e[i]=z/c}
+  return {v,e,hz,mx:Math.max(...e),fmax:K*hz};
+}
+function magPadded(x,sr,N){
+  const re=new Float32Array(N),im=new Float32Array(N),L=x.length;
+  for(let i=0;i<L;i++)re[i]=x[i]*(.5-.5*Math.cos(2*Math.PI*i/Math.max(1,L-1)));
+  fft(re,im);const m=new Float32Array(N/2);
+  for(let i=0;i<m.length;i++)m[i]=20*Math.log10(Math.hypot(re[i],im[i])/Math.max(1,L)*2+1e-12);
+  return m;
+}
+function pitchAt(frame,sr,minE=1e-7){
+  if(frame.length<128)return null;
+  const N=Math.min(2048,frame.length),off=Math.floor((frame.length-N)/2),z=new Float64Array(N);let mean=0;
+  for(let i=0;i<N;i++)mean+=frame[off+i];mean/=N;
+  let e=0;for(let i=0;i<N;i++){const w=.54-.46*Math.cos(2*Math.PI*i/Math.max(1,N-1));z[i]=(frame[off+i]-mean)*w;e+=z[i]*z[i]}
+  if(e/N<minE)return null;
+  const lo=Math.max(3,Math.floor(sr/550)),hi=Math.min(N>>1,Math.ceil(sr/60));
+  if(hi<=lo+3)return null;
+  const cs=new Float64Array(hi+2);
+  for(let lag=lo-1;lag<=hi+1;lag++){let c=0;for(let i=0;i<N-lag;i++)c+=z[i]*z[i+lag];cs[lag]=c/e*N/(N-lag)}
+  let bl=lo,best=-1;for(let lag=lo;lag<=hi;lag++)if(cs[lag]>best){best=cs[lag];bl=lag}
+  if(best<.45||bl<=lo+1||bl>=hi-1)return null;
+  for(let m=(N/sr*1000<64?2:4);m>=2;m--){const t=Math.round(bl/m);if(t<lo+2)continue;let q=t;for(let l=t-2;l<=t+2;l++)if(l>=lo&&l<=hi&&cs[l]>cs[q])q=l;if(cs[q]>=.95*cs[bl]&&cs[q]>cs[q-1]&&cs[q]>=cs[q+1]){bl=q;break}}
+  let d=0;const ym=cs[bl-1],yp=cs[bl+1],den=ym-2*cs[bl]+yp;if(Math.abs(den)>1e-9)d=.5*(ym-yp)/den;
+  return Math.round(sr/(bl+d));
+}
+function pitch(x,sr){
+  const N=Math.min(2048,x.length),H=Math.max(64,Math.floor(N/4));
+  if(N<128)return [];
+  let mx=0;for(let s=0;s+N<=x.length;s+=H){let e=0;for(let i=0;i<N;i++)e+=x[s+i]*x[s+i];mx=Math.max(mx,e/N)}
+  const minE=Math.max(1e-9,mx*3e-4*.4),out=[];
+  for(let s=0;s+N<=x.length;s+=H)out.push(pitchAt(x.subarray(s,s+N),sr,minE));
+  return out.map((v,i)=>{if(v==null)return null;const w=[];for(let k=i-2;k<=i+2;k++)if(out[k]!=null)w.push(out[k]);if(w.length<3)return null;w.sort((a,b)=>a-b);return w[w.length>>1]});
+}
+
+$('fi').onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;
+ $('st').textContent='Файл: '+f.name+' — загружается…';
+ try{await load(await f.arrayBuffer(),f.name);$('st').textContent='Файл: '+f.name+' | Длина '+(S.d.length/S.sr).toFixed(2)+' с.'}catch(x){$('st').textContent='Файл: '+f.name+' — не удалось прочитать.'} finally {e.target.value='';}
+};
+
+/* ---------------- relative loudness ---------------- */
+function loud(x){
+ const N=Math.min(1024,Math.max(32,x.length));
+ if(!x.length)return [];
+ const hop=Math.max(16,Math.floor(N/2)),o=[];
+ for(let start=0;start<x.length;start+=hop){
+  const end=Math.min(x.length,start+N);
+  if(end<=start)break;
+  let e=0;
+  for(let i=start;i<end;i++)e+=x[i]*x[i];
+  o.push(10*Math.log10(e/(end-start)+1e-12));
+  if(end===x.length)break;
+ }
+ const mx=o.reduce((a,b)=>Math.max(a,b),-Infinity);
+ return o.map(v=>v-mx);
+}
+/* ---------------- drawing ---------------- */
+
+function bars(g,x,W,H,col,a){
+ let mx=0;for(let i=0;i<x.length;i++)mx=Math.max(mx,Math.abs(x[i]));mx=Math.max(mx,1e-9);
+ g.fillStyle=col;g.globalAlpha=a;const k=x.length/W;
+ for(let i=0;i<W;i+=2){let lo=1,hi=-1;const aa=Math.floor(i*k),bb=Math.min(x.length,Math.floor((i+2)*k));for(let j=aa;j<bb;j++){const v=x[j]/mx;if(v<lo)lo=v;if(v>hi)hi=v}if(hi>=lo)g.fillRect(i,H/2*(1-hi),2,Math.max(1,H/2*(hi-lo)))}g.globalAlpha=1;
+}
+function drawWave(){
+ const cv=$('cw'),g=cv.getContext('2d'),W=cv.width,H=cv.height;g.clearRect(0,0,W,H);bars(g,S.d,W,H,css('--acc'),.9);
+ const dur=fileDurationMs()||1,[sa,sb]=selGet(),X=t=>t/dur*W;
+ g.fillStyle=css('--ref');g.globalAlpha=.25;g.fillRect(X(sa),0,X(sb)-X(sa),H);g.globalAlpha=1;g.fillRect(X(sa)-1,0,2,H);g.fillRect(X(sb)-1,0,2,H);
+ if(isSpecView()){
+  const t=+$('rc').value,act=viewMode.startsWith('spec')?+viewMode.slice(4):0,wins=viewMode==='spec8'?[8]:[128,32];
+  if(!viewMode.startsWith('sg'))wins.forEach((w,k)=>{const f=analysisFrame(S.d,S.sr,t,w,curLim()),y=wins.length>1?(k?H*.56:H*.06):H*.06,h=wins.length>1?H*.38:H*.88,col=css(k?'--ok':'--fg'),on=!act||act===w;if(!f.empty){g.globalAlpha=on?.4:.15;g.fillStyle=col;g.fillRect(X(f.start),y,Math.max(1,X(f.end)-X(f.start)),h)}g.globalAlpha=on?.9:.4;g.strokeStyle=col;g.lineWidth=1.5;g.strokeRect(X(f.nomStart)+.5,y+.5,Math.max(1,X(f.nomEnd)-X(f.nomStart)),h);g.globalAlpha=1;g.fillStyle=css('--fg');g.font='12px system-ui';g.fillText(String(w),Math.max(2,Math.min(W-26,X(f.nomStart)+3)),y+14)});
+  g.fillStyle=css('--fg');g.fillRect(X(t)-1,0,3,H);
+ }
+}
+function plot(g,W,H,v,y0,y1,col,lw,al,xa=0,xb=1){
+ g.strokeStyle=col;g.lineWidth=lw;g.globalAlpha=al;g.beginPath();let up=false,n=Math.max(1,v.length-1);for(let i=0;i<v.length;i++){const u=v[i];if(u==null||!Number.isFinite(u)){up=false;continue}const X=(xa+i/n*(xb-xa))*W,Y=H-(u-y0)/(y1-y0)*H;up?g.lineTo(X,Y):g.moveTo(X,Y);up=true}g.stroke();g.globalAlpha=1;
+}
+function tstep(d){return d<=.3?.05:d<=.6?.1:d<=1.2?.2:d<=3?.5:d<=6?1:2}
+function otick(g,W,H,d,t0=0){
+ const st=tstep(d);g.save();g.fillStyle=css('--fg');g.textAlign='left';
+ for(let t=Math.ceil(t0/st-1e-9)*st;t<=t0+d+1e-9;t+=st){const X=d?(t-t0)/d*W:0;g.globalAlpha=.2;g.fillRect(X,0,1,H);g.globalAlpha=1;g.fillText(String(Math.round(t*1000)),Math.min(W-30,X+4),H-8)}
+ g.restore();
+}
+function ytick(g,W,H,y0,y1,step,unit){
+ g.save();g.fillStyle=css('--fg');g.font='12px system-ui';g.textAlign='left';
+ for(let v=Math.ceil(y0/step-1e-9)*step;v<=y1+1e-9;v+=step){const Y=H-(v-y0)/(y1-y0)*H;g.globalAlpha=.18;g.fillRect(0,Y,W,1);g.globalAlpha=.8;g.fillText(String(v),4,Math.min(H-26,Math.max(12,Y-3)))}
+ g.restore();
+}
+const MIN_ANA_MS=8;
+function analysisFrame(data,sr,centerMs,windowMs,lim){
+ const L0=lim?Math.max(0,Math.floor(lim[0]*sr/1000)):0,L1=lim?Math.min(data.length,Math.floor(lim[1]*sr/1000)):data.length;
+ const req=Math.max(1,Math.round(windowMs*sr/1000)),na=Math.round(centerMs*sr/1000)-Math.floor(req/2),nb=na+req;
+ const a=Math.max(na,L0),b=Math.min(nb,L1),empty=b<=a,len=empty?0:b-a;
+ return {x:empty?data.subarray(0,0):data.subarray(a,b),start:(empty?na:a)/sr*1000,end:(empty?na:b)/sr*1000,nomStart:na/sr*1000,nomEnd:nb/sr*1000,requested:req,empty,clipped:!empty&&len<req,short:len/sr*1000<MIN_ANA_MS};
+}
+function analyzeAt(data,sr,centerMs,windowMs){const fr=analysisFrame(data,sr,centerMs,windowMs,data===S.d?curLim():null);const ok=!fr.empty&&!fr.short,f0=ok?pitchAt(fr.x,sr):null;return {...fr,formants:ok?formants(fr.x,sr,f0):null,f0};}
+function setMetric(id,v){$(id).textContent=v==null?'—':Math.round(v)+' Гц'}
+function updateFormantMetrics(centerMs){
+ const a128=analyzeAt(S.d,S.sr,centerMs,128);
+ const a32=analyzeAt(S.d,S.sr,centerMs,32);
+ setMetric('f0v128',a128.f0);setMetric('f1v128',a128.formants?.[0]);setMetric('f2v128',a128.formants?.[1]);setMetric('f3v128',a128.formants?.[2]);setMetric('f4v128',a128.formants?.[3]);
+ setMetric('f0v32',a32.f0);setMetric('f1v32',a32.formants?.[0]);setMetric('f2v32',a32.formants?.[1]);setMetric('f3v32',a32.formants?.[2]);setMetric('f4v32',a32.formants?.[3]);
+ return {a128,a32};
+}
+const fmtCache={},poleCache={};
+function poleTrack(x,sr,w){
+ const req=Math.round(w*sr/1000),L=x.length,e={fr:[],xa:0,xb:1};
+ if(L<req||req<64)return e;
+ const dur=L/sr*1000,n=Math.max(1,Math.round((dur-w)/Math.max(5,dur/200))+1),hop=n>1?(L-req)/(n-1):0;
+ const key=[S.d,L,x.byteOffset,sr,fCeil],c=poleCache[w];
+ if(c&&c.k.every((v,i)=>v===key[i]))return c.r;
+ const st=[],en=[];let mx=0;
+ for(let i=0;i<n;i++){const a=Math.round(i*hop);let s=0;for(let j=a;j<a+req;j++)s+=x[j]*x[j];s/=req;st.push(a);en.push(s);if(s>mx)mx=s}
+ const minE=Math.max(1e-9,mx*1.2e-4),P=FPARAMS[fCeil];
+ for(let i=0;i<n;i++){
+  if(en[i]<minE){e.fr.push([]);continue}
+  const q=toLpcRate(x.subarray(st[i],st[i]+req),sr,P.T);
+  e.fr.push(q.x.length<64?[]:lpcPoles(q.x,q.sr,150,fCeil,P.order,1200));
+ }
+ e.xa=req/2/L;e.xb=1-e.xa;poleCache[w]={k:key,r:e};return e;
+}
+function formantTrack(x,sr,w){
+ const req=Math.round(w*sr/1000),L=x.length,e={v:[[],[],[],[]],xa:0,xb:1};
+ if(L<req||req<64)return e;
+ const dur=L/sr*1000,n=Math.max(1,Math.round((dur-w)/Math.max(5,dur/400))+1),hop=n>1?(L-req)/(n-1):0;
+ const key=[S.d,L,x.byteOffset,sr,fCeil],c=fmtCache[w];
+ if(c&&c.k.every((v,i)=>v===key[i]))return c.r;
+ const st=[],en=[];let mx=0;
+ for(let i=0;i<n;i++){const a=Math.round(i*hop);let s=0;for(let j=a;j<a+req;j++)s+=x[j]*x[j];s/=req;st.push(a);en.push(s);if(s>mx)mx=s}
+ const minE=Math.max(1e-9,mx*1.2e-4);
+ for(let i=0;i<n;i++){const f=en[i]<minE?[null,null,null,null]:(()=>{const fx=x.subarray(st[i],st[i]+req);return formants(fx,sr,pitchAt(fx,sr))})();for(let k=0;k<4;k++)e.v[k].push(f[k])}
+ for(let k=0;k<4;k++){const a=e.v[k],b=a.slice();for(let i=1;i<a.length-1;i++)if(a[i-1]!=null&&a[i]!=null&&a[i+1]!=null)b[i]=[a[i-1],a[i],a[i+1]].sort((p,q)=>p-q)[1];e.v[k]=b}
+ e.xa=req/2/L;e.xb=1-e.xa;
+ fmtCache[w]={k:key,r:e};
+ return e;
+}
+function fplot(g,W,H,v,y0,y1,col,lw,xa,xb){
+ const n=Math.max(1,v.length-1),pt=i=>[(xa+i/n*(xb-xa))*W,H-(v[i]-y0)/(y1-y0)*H];
+ g.strokeStyle=col;g.fillStyle=col;g.lineWidth=lw;g.beginPath();let up=false;
+ for(let i=0;i<v.length;i++){if(v[i]==null||!Number.isFinite(v[i])){up=false;continue}const [X,Y]=pt(i);up?g.lineTo(X,Y):g.moveTo(X,Y);up=true}
+ g.stroke();
+ for(let i=0;i<v.length;i++){if(v[i]==null||!Number.isFinite(v[i]))continue;const [X,Y]=pt(i);g.beginPath();g.arc(X,Y,lw*.8,0,6.2832);g.fill()}
+}
+function drawSpectrumPanel(g,x,sr,W,H,centerMs,windowMs,col){
+ const a=analyzeAt(x,sr,centerMs,windowMs),curve=a.empty||a.x.length<16?{fmax:0,mx:0}:specCurve(a.x,sr,FMAX),FM=curve.fmax,lo=curve.mx-70,hi=curve.mx+3;
+ if(FM>0){plot(g,W,H,curve.v,lo,hi,col,1.2,.4);plot(g,W,H,curve.e,lo,hi,col,3,1);}
+ if(cmp&&R){const rf=specCurve(analysisFrame(R.d,R.sr,R.d.length/R.sr*500,windowMs).x,R.sr,FMAX);if(rf.fmax>0)plot(g,W,H,rf.e,rf.mx-70,rf.mx+3,css('--ref'),3,1);g.fillStyle=css('--ref');g.fillText('Эталон: '+$('sel').value,8,38)}
+ g.fillStyle=css('--fg');g.font='15px system-ui';g.fillText('Спектр '+windowMs+' ms',8,20);
+ const fs=a.formants||[];fs.forEach((f,i)=>{if(f==null||f>FM)return;const X=f/FM*W;g.fillStyle=col;g.fillRect(X,30,2,H-45);g.fillText('F'+(i+1)+' '+f+' Гц',Math.min(W-90,X+5),48+i*18)});
+ g.fillStyle=css('--fg');g.globalAlpha=.7;g.fillText(a.empty?'Окно целиком вне '+(anaMode==='frag'?'выделения':'записи'):'Окно: '+a.start.toFixed(1)+'–'+a.end.toFixed(1)+' ms',8,H-8);g.globalAlpha=1;
+ if(FM>0){g.fillStyle=css('--fg');g.globalAlpha=.6;g.font='12px system-ui';const ks=FM>9000?2000:1000;for(let k=ks;k<FM;k+=ks){const X=k/FM*W;g.fillRect(X,H-28,1,7);g.fillText(String(k/1000),X-3,H-31)}g.fillText('кГц',W-30,H-31);g.globalAlpha=1;g.font='15px system-ui'}
+ return a;
+}
+function sgram(x,sr,windowMs){
+ const N=Math.max(128,Math.round(windowMs*sr/1000)),H=Math.max(32,Math.floor(N/4)),F=Math.min(Math.floor(FMAX/(sr/nextPow2(N))),nextPow2(N)/2),out=[];
+ if(x.length<N)return {rows:[],F,fftN:nextPow2(N)};
+ for(let pos=0;pos+N<=x.length;pos+=H)out.push(magPadded(x.subarray(pos,pos+N),sr,nextPow2(N)).subarray(0,F));
+ return {rows:out,F,fftN:nextPow2(N),N,H};
+}
+function drawSG(g,x,sr,Y,H,windowMs){
+ const G=sgram(x,sr,windowMs);g.fillStyle=css('--fg');g.fillText('Спектрограмма '+windowMs+' ms',8,Y+18);
+ if(!G.rows.length){g.globalAlpha=.7;g.fillText('Файл короче выбранного окна.',8,Y+42);g.globalAlpha=1;return}
+ const C=G.rows.length,F=G.F;let mx=-Infinity,mn=Infinity;for(const row of G.rows)for(const v of row){mx=Math.max(mx,v);mn=Math.min(mn,v)}
+ const o=document.createElement('canvas');o.width=C;o.height=F;const og=o.getContext('2d'),im=og.createImageData(C,F),top=mx,bot=top-70;
+ for(let c=0;c<C;c++)for(let f=0;f<F;f++){const v=Math.max(0,Math.min(1,(G.rows[c][f]-bot)/70)),p=((F-1-f)*C+c)*4;im.data[p]=Math.round(255*v);im.data[p+1]=Math.round(255*Math.max(0,(v-.45)*1.8));im.data[p+2]=Math.round(255*(1-v)*.9);im.data[p+3]=255}
+ og.putImageData(im,0,0);const ML=58,MR=10,W=720-ML-MR,gW=Math.max(1,W);const dur=x.length/sr*1000,tl=(G.N/2-G.H/2)/sr*1000,tw=C*G.H/sr*1000;g.drawImage(o,ML+tl/dur*gW,Y+26,Math.max(1,tw/dur*gW),Math.max(20,H-26));
+ g.fillStyle=css('--fg');g.textAlign='right';const maxF=F*(sr/G.fftN),step=maxF<=9000?1000:2000;for(let k=0;k<=maxF;k+=step){const yy=Y+26+(H-26)-k/maxF*(H-26);g.globalAlpha=.3;g.fillRect(ML,yy,gW,1);g.globalAlpha=1;g.fillText((k/1000).toFixed(0),ML-7,Math.min(Y+H,Math.max(Y+38,yy+5)))}g.textAlign='left';
+ const tx=t=>ML+t/dur*gW,[sa,sb]=selGet(),tc=+$('rc').value;
+ g.fillStyle=css('--ref');g.fillRect(tx(sa)-1,Y+26,2,H-26);g.fillRect(tx(sb)-1,Y+26,2,H-26);
+ g.fillStyle=css('--ok');g.fillRect(tx(tc)-1,Y+26,2,H-26);
+ g.fillStyle=css('--fg');g.font='12px system-ui';const st=dur<700?100:dur<1500?200:dur<4000?500:1000;for(let t=0;t<=dur;t+=st)g.fillText(String(t),Math.min(720-30,tx(t)+2),Y+H-4);g.font='16px system-ui';
+}
+function draw(){
+ if(!S)return;const cv=$('cg'),g=cv.getContext('2d'),W=cv.width,fg=css('--fg'),C=css('--acc');g.font='16px system-ui';g.fillStyle=fg;
+ const mode=viewMode;const isSpec=isSpecView();$('formantBox').hidden=!(mode==='spec128'||mode==='spec32');
+ cv.height=(mode==='wave'||mode==='f0'||mode==='fmt'||mode==='loud')?390:(mode.startsWith('sg')?500:420);const H=cv.height;g.font='16px system-ui';g.fillStyle=fg;g.clearRect(0,0,W,H);
+ if(mode==='wave'){
+  const x=seg();bars(g,x,W,H,C,.9);otick(g,W,H,x.length/S.sr,selGet()[0]/1000);const fs=analyzeAt(x,S.sr,x.length/S.sr*500,128).formants||[null,null,null];$('info').textContent='Форма волны. Оценка формант (окно 128 ms в центре фрагмента): '+fs.map((v,i)=>'F'+(i+1)+'='+(v??'—')+' Гц').join(', ')+'.';
+ }else if(mode.startsWith('spec')){
+  const ms=+mode.slice(4),center=Number($('rc').value);
+  const mm=updateFormantMetrics(center);let warn='';const fm1=v=>v.toFixed(1).replace('.',','),what=anaMode==='frag'?'выделения':'записи';
+  const aMain=drawSpectrumPanel(g,S.d,S.sr,W,H,center,ms,C);
+  (ms===8?[[aMain,8]]:[[mm.a128,128],[mm.a32,32]]).forEach(([a,w])=>{if(a.empty)warn+=' Окно '+w+' ms целиком вне '+what+'.';else{if(a.clipped)warn+=' Окно '+w+' ms сжато до '+fm1(a.end-a.start)+' ms: часть окна за границей '+what+'.';if(a.short)warn+=' Окно '+w+' ms: осталась слишком короткая часть (<'+MIN_ANA_MS+' ms), F0 и форманты не считаются.'}});
+  $('info').textContent='Абсолютное время: '+center.toFixed(1)+' ms. Режим: '+(anaMode==='frag'?'фрагмент':'вся запись')+'. '+(ms===8?'Окно 8 ms.':'Окна 128 и 32 ms рассчитаны в одной точке.')+' Потолок поиска формант: '+fCeil+' Гц.'+warn;
+ }else if(mode.startsWith('sg')){
+  const ms=+mode.slice(2);drawSG(g,S.d,S.sr,8,H-8,ms);$('info').textContent='Вся запись целиком. Окно STFT: '+ms+' ms. Линии: границы выделения и точка анализа.';
+ }else if(mode==='fmt'){
+  const x0=anaSeg(),T0=anaT0(),FY=fCeil,NF=showF4?4:3,cols=[['#1f5fbf','#8fb8f0'],['#1a8a3c','#8fd6a3'],['#d9620b','#f7bf85'],['#7b3fb5','#c9a8ea']],tr=[formantTrack(x0,S.sr,128),formantTrack(x0,S.sr,32)];
+  const anyP=showP[128]||showP[32];
+  g.save();if(anyP)g.globalAlpha=.4;
+  [0,1].forEach(k=>{const t=tr[k];for(let f=0;f<NF;f++)fplot(g,W,H,t.v[f],0,FY,cols[f][k],k?1.6:3,t.xa,1-t.xa)});
+  g.restore();poleHit=[];let pinfo='';
+  if(showF0){
+   const pv=pitch(x0,S.sr).map(v=>v!=null&&(v<50||v>550)?null:v),pxa=x0.length?Math.min(2048,x0.length)/2/x0.length:0;
+   g.save();g.globalAlpha=.9;fplot(g,W,H,pv,0,FY,'#d81b60',2,pxa,1-pxa);g.restore();
+  }
+  [128,32].forEach(w=>{
+   if(!showP[w])return;
+   const pt=poleTrack(x0,S.sr,w),nn=Math.max(1,pt.fr.length-1);
+   if(!pt.fr.length)pinfo+=' Окно полюсов '+w+' ms длиннее анализируемой части — точек нет.';
+   g.save();g.fillStyle=fg;g.strokeStyle=fg;g.lineWidth=1.2;
+   pt.fr.forEach((ps,i)=>{const X=(pt.xa+i/nn*(pt.xb-pt.xa))*W;ps.forEach(p=>{if(p.f>FY)return;const Y=H-p.f/FY*H,a=Math.exp(-p.bw/250);g.globalAlpha=.2+.7*a;g.beginPath();
+    if(w===128){g.arc(X,Y,1.2+2.8*a,0,6.2832);g.fill()}else{g.arc(X,Y,1+2.2*a,0,6.2832);g.stroke()}
+    poleHit.push({X,Y,f:p.f,bw:p.bw,w,ms:(T0+(pt.xa+i/nn*(pt.xb-pt.xa))*x0.length/S.sr)*1000})})});
+   g.restore();
+  });
+  if(anyP){
+   if(poleSel){g.save();g.strokeStyle=fg;g.lineWidth=2;g.beginPath();g.arc(poleSel.X,poleSel.Y,10,0,6.2832);g.stroke();g.restore();
+    pinfo+=' Выбран полюс (окно '+poleSel.w+' ms): '+poleSel.f+' Гц, ширина полосы '+poleSel.bw+' Гц, время '+poleSel.ms.toFixed(0)+' ms.'}
+   else pinfo+=' Точки — все полюса LPC: закрашенные — окно 128 ms, кольца — окно 32 ms; крупные и тёмные — узкие, то есть сильные резонансы, мелкие и бледные — широкие. Коснитесь точки, чтобы увидеть частоту и ширину.';
+  }
+  if(showF0)pinfo+=' Розовая линия — F0.';
+  g.fillStyle=fg;g.font='16px system-ui';ytick(g,W,H,0,FY,500);g.fillStyle=fg;g.font='16px system-ui';g.fillText('Форманты F1–F'+NF+', Гц',8,20);
+  g.font='12px system-ui';cols.slice(0,NF).forEach((c,f)=>{const X=W-150+0,Y=36+f*18;g.fillStyle=c[0];g.fillRect(X,Y-8,22,5);g.fillStyle=c[1];g.fillRect(X+26,Y-7,22,3);g.fillStyle=fg;g.fillText('F'+(f+1)+'  128 / 32 ms',X+54,Y)});
+  g.font='16px system-ui';otick(g,W,H,x0.length/S.sr,T0);
+  const miss=[128,32].filter(w=>x0.length<Math.round(w*S.sr/1000));
+  $('info').textContent='Форманты F1–F'+NF+' по '+(anaMode==='frag'?'выделенному фрагменту':'всей записи')+': тёмные линии — окно 128 ms, светлые — окно 32 ms. Тихие кадры и кадры без найденной форманты скрыты; одиночные выбросы сглажены медианой по трём соседним кадрам. F4 слабее остальных и определяется менее надёжно; кнопка «F4» включает и выключает её. Ось: мс от начала WAV.'+(miss.length?' Окно '+miss.join(' и ')+' ms длиннее анализируемой части — линии нет.':'')+pinfo;
+ }else if(mode==='f0'){
+  const x0=anaSeg(),xa=x0.length?Math.min(2048,x0.length)/2/x0.length:0,p=pitch(x0,S.sr).map(v=>v!=null&&(v<50||v>550)?null:v);plot(g,W,H,p,50,550,C,2.5,1,xa,1-xa);g.fillStyle=fg;ytick(g,W,H,50,550,50);g.fillStyle=fg;g.font='16px system-ui';g.fillText('F0 (основной тон), Гц',8,20);otick(g,W,H,x0.length/S.sr,anaT0());$('info').textContent='F0 по '+(anaMode==='frag'?'выделенному фрагменту':'всей записи')+', окно до 2048 отсчётов; тихие и невокализованные кадры скрыты. Ось: мс от начала WAV.';
+ }else{
+  const x=anaSeg(),l=loud(x);plot(g,W,H,l,-50,0,C,3,1);ytick(g,W,H,-50,0,10); if(!l.length){g.fillStyle=fg;g.fillText('Недостаточно данных для графика громкости.',8,48);}g.fillStyle=fg;g.fillText('Громкость, дБ (относительная)',8,20);otick(g,W,H,x.length/S.sr,anaT0());$('info').textContent='Относительный уровень, не дБ SPL ('+(anaMode==='frag'?'фрагмент':'вся запись')+'). Ось: мс от начала WAV.';
+ }
+}
+function redraw(){
+ clearTimeout(drawTimer);
+ drawTimer=setTimeout(()=>{if(S){drawWave();draw()}},30);
+}
+$('ra').oninput=()=>{setSel(+$('ra').value,+$('rb').value,'a');redraw()};
+$('rb').oninput=()=>{setSel(+$('ra').value,+$('rb').value,'b');redraw()};
+const numv=id=>parseFloat(String($(id).value).replace(',','.'));
+$('raNum').onchange=()=>{setSel(numv('raNum'),+$('rb').value,'a');drawWave();draw()};
+$('rbNum').onchange=()=>{setSel(+$('ra').value,numv('rbNum'),'b');drawWave();draw()};
+
+/* ---------------- references ---------------- */
+
+$('sel').onchange=async()=>{const r=await chk();if(cmp){R=r||null;draw()}};
+$('sv').onclick=async()=>{
+ const x=seg();if(x.length/S.sr>3)return rs('Фрагмент длиннее 3 с: сократите.');
+ if(x.length<512)return rs('Фрагмент слишком короткий.');
+ try{await idb('put',key(),{d:Float32Array.from(x),sr:S.sr,created:Date.now()});rs('Эталон сохранён.')}
+ catch(e){rs('Не удалось сохранить: '+e.name)}
+};
+$('cmp').onclick=async()=>{
+ if(cmp){cmp=false;R=null;$('cmp').classList.remove('on')}
+ else{R=await chk();if(!R)return;cmp=true;$('cmp').classList.add('on')}
+ draw();
+};
+$('del').onclick=async()=>{
+ try{await idb('del',key());R=null;cmp=false;$('cmp').classList.remove('on');rs('Эталон удалён.');draw()}
+ catch(e){rs('Не удалось удалить: '+e.name)}
+};
+function wav(d,sr){
+ const n=d.length,b=new DataView(new ArrayBuffer(44+n*2));
+ const w=(o,t)=>[...t].forEach((c,i)=>b.setUint8(o+i,c.charCodeAt(0)));
+ w(0,'RIFF');b.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');b.setUint32(16,16,true);
+ b.setUint16(20,1,true);b.setUint16(22,1,true);b.setUint32(24,sr,true);b.setUint32(28,sr*2,true);
+ b.setUint16(32,2,true);b.setUint16(34,16,true);w(36,'data');b.setUint32(40,n*2,true);
+ for(let i=0;i<n;i++)b.setInt16(44+i*2,Math.max(-1,Math.min(1,d[i]))*32767,true);
+ return new Blob([b],{type:'audio/wav'});
+}
+$('lr').onclick=async()=>{const e=await chk();if(e)play(e.d,e.sr)};
+$('xa').onclick=async()=>{const e=await chk();if(e)show(Float32Array.from(e.d),e.sr)};
+$('xf').onclick=async()=>{
+ const e=await chk();if(!e)return;
+ const a=document.createElement('a');a.href=URL.createObjectURL(wav(e.d,e.sr));
+ a.download='etalon_'+$('sel').value.replace(/\s+/g,'_')+'.wav';document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(a.href),1000);rs('WAV-файл сформирован.');
+};
+$('xi').onclick=()=>$('xin').click();
+$('sw').onclick=()=>{
+ if(!S||!S.d||!S.d.length)return $('st').textContent='Нет записи: сначала запишите звук или откройте файл.';
+ const a=document.createElement('a'),n=new Date(),p=v=>String(v).padStart(2,'0');
+ a.href=URL.createObjectURL(wav(S.d,S.sr));
+ a.download='zapis_'+n.getFullYear()+p(n.getMonth()+1)+p(n.getDate())+'_'+p(n.getHours())+p(n.getMinutes())+p(n.getSeconds())+'.wav';
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+ $('st').textContent='WAV сохранён: '+(S.d.length/S.sr).toFixed(2)+' с, '+S.sr+' Гц.';
+};
+$('xin').onchange=async ev=>{
+ const f=ev.target.files[0];ev.target.value='';if(!f)return;
+ try{
+  const ab=await decodeNative(await f.arrayBuffer());
+  if(ab.duration>3)return rs('Файл длиннее 3 с: сократите его до 3 с.');
+  const d=new Float32Array(ab.length);
+  if(ab.numberOfChannels===1)d.set(ab.getChannelData(0));
+  else for(let i=0;i<ab.length;i++){let v=0;for(let c=0;c<ab.numberOfChannels;c++)v+=ab.getChannelData(c)[i];d[i]=v/ab.numberOfChannels}
+  await idb('put',key(),{d,sr:ab.sampleRate,created:Date.now()});rs('Эталон загружен из файла.');
+ }catch(x){rs('Не удалось прочитать файл: '+x.name)}
+};
+
+/* ---------------- recording ---------------- */
+function endRec(){
+ if(!rec)return;const r=rec;rec=null;clearTimeout(recTimer);
+ try{r.sp.disconnect();r.g.disconnect();r.src.disconnect()}catch(e){}
+ const n=r.ch.reduce((a,c)=>a+c.length,0),d=new Float32Array(n);let o=0;for(const c of r.ch){d.set(c,o);o+=c.length}
+ stopM();$('rec').textContent='Запись';
+ if(n<1024){$('st').textContent='Запись слишком короткая.';return}
+ show(d,ctx.sampleRate);
+}
+$('rec').onclick=async()=>{
+ if(rec)return endRec();
+ try{await mic()}catch(e){$('st').textContent='Микрофон недоступен: '+e.name;return}
+ const src=ctx.createMediaStreamSource(ms),g=ctx.createGain(),sp=ctx.createScriptProcessor(4096,1,1),ch=[];
+ g.gain.value=cfg.gain;sp.onaudioprocess=e=>{if(rec)ch.push(new Float32Array(e.inputBuffer.getChannelData(0)))};
+ src.connect(g);g.connect(sp);sp.connect(ctx.destination);
+ rec={src,g,sp,ch};$('rec').textContent='Стоп';$('st').textContent='Идёт запись…';
+ recTimer=setTimeout(endRec,10000);
+};
+$('ck').onclick=meter;
+
+/* ---------------- initialization ---------------- */
+
+if(AC&&!AC.prototype.setSinkId){$('lo').hidden=true;$('no').hidden=false}
+$('sp').hidden=false;ui();updateRangeScale();updateFr();
+if(navigator.mediaDevices)navigator.mediaDevices.ondevicechange=devs;
+devs();
+</script>
+</body>
+</html>
